@@ -1,32 +1,30 @@
 from flask import Flask, request, jsonify
+import sqlite3
+from datetime import datetime
 
 app = Flask(__name__)
 
-# Replace this with your NowPayments API Key
-API_KEY = "your_nowpayments_api_key"
+def check_license(user_id):
+    conn = sqlite3.connect('bot_users.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT expiration FROM orders WHERE user_id = ? AND status = 'completed'", (user_id,))
+    result = cursor.fetchone()
+    conn.close()
 
-@app.route('/callback', methods=['POST'])
-def nowpayments_callback():
-    data = request.json  # Get the JSON data sent by NowPayments
+    if result:
+        expiration_date = datetime.strptime(result[0], "%Y-%m-%d").date()
+        if datetime.now().date() <= expiration_date:
+            return {"status": "valid"}
+    return {"status": "expired"}
 
-    # Verify if the request contains required fields
-    if "payment_status" in data and "payment_id" in data:
-        payment_status = data["payment_status"]
-        payment_id = data["payment_id"]
-        amount_received = data.get("pay_amount", 0)
-        currency = data.get("pay_currency", "Unknown")
+@app.route('/check_license', methods=['POST'])
+def check_license_endpoint():
+    data = request.json
+    user_id = data.get("user_id")
+    if not user_id:
+        return jsonify({"error": "User ID required"}), 400
 
-        # Log the received data
-        print(f"Received payment update: ID {payment_id}, Status {payment_status}, Amount {amount_received} {currency}")
+    return jsonify(check_license(user_id))
 
-        # Check if payment is confirmed
-        if payment_status == "finished":
-            # Process successful payment (e.g., mark order as paid)
-            print("Payment confirmed!")
-
-        return jsonify({"status": "success"}), 200
-
-    return jsonify({"error": "Invalid request"}), 400
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
